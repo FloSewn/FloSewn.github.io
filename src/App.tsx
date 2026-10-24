@@ -11,7 +11,7 @@ export default function App() {
         </Link>
         <nav>
           <Link to="/" className="text-sm text-gray-600 transition-colors hover:text-black">
-            Übersicht
+            Overview
           </Link>
         </nav>
       </header>
