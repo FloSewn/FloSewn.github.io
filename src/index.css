@@ -1,19 +1,13 @@
 @import 'tailwindcss';
+@plugin '@tailwindcss/typography';
 
 @theme {
-  /* Helligkeitsstufen (Background & Cards) */
-  --color-slate-950: #f8fafc; /* Haupt-Hintergrund (sehr helles Soft-Grau/Weiß) */
-  --color-slate-900: #ffffff; /* Card-Hintergrund (Reines Weiß für Kontrast) */
-  --color-slate-800: #e2e8f0; /* Rahmengrenzen & Trennlinien (Light Border) */
-  --color-slate-700: #cbd5e1; /* Hover-Rahmen & Buttons */
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
 
-  /* Typografie & Lesbarkeit */
-  --color-slate-100: #0f172a; /* Haupttext (Dunkles Graphit/Fast-Schwarz für beste Lesbarkeit) */
-  --color-slate-300: #334155; /* Sekundärtext (Dunkles Slate) */
-  --color-slate-400: #64748b; /* Nebentext & Subtitles */
-
-  /* Akzentfarben (Primary & Hover) */
-  --color-blue-600: #2563eb; /* Modernes Royal-Blau (Primary Buttons & Highlights) */
-  --color-blue-500: #1d4ed8; /* Dunkleres Blau für Hover-Zustände */
-  --color-blue-400: #3b82f6; /* Akzent-Texte & Kategorien */
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+  }
 }

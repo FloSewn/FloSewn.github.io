@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
 import * as ort from 'onnxruntime-web';
+import { useCallback, useEffect, useState } from 'react';
 
 // 1. Zwingt ONNX dazu, die WebAssembly-Dateien über ein CDN zu laden,
 // um die MIME-Type-Fehler von Vite in Codespaces zu umgehen.
@@ -18,8 +18,8 @@ export function useVAE() {
     const initModels = async () => {
       try {
         const basePath = import.meta.env.BASE_URL;
-        const encSession = await ort.InferenceSession.create(`${basePath}vae/encoder.onnx`);
-        const decSession = await ort.InferenceSession.create(`${basePath}vae/decoder.onnx`);
+        const encSession = await ort.InferenceSession.create(`${basePath}vae_mnist/encoder.onnx`);
+        const decSession = await ort.InferenceSession.create(`${basePath}vae_mnist/decoder.onnx`);
 
         setEncoder(encSession);
         setDecoder(decSession);

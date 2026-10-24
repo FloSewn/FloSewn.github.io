@@ -1,0 +1,28 @@
+export const meta = {
+  title: 'Delaunay-Triangulierung in TQMesh',
+  date: 'Okt 2026',
+};
+
+# Delaunay-Triangulierung in TQMesh
+
+Die Bedingung besagt, dass kein Punkt innerhalb des Umkreises eines beliebigen Dreiecks im Netz liegen darf.
+Hier ist die mathematische Definition der Umkreisbedingung:
+
+$$
+\det \begin{pmatrix}
+x_A & y_A & x_A^2 + y_A^2 & 1 \\
+x_B & y_B & x_B^2 + y_B^2 & 1 \\
+x_C & y_C & x_C^2 + y_C^2 & 1 \\
+x_D & y_D & x_D^2 + y_D^2 & 1
+\end{pmatrix} > 0
+$$
+
+Und so berechnen wir das in C++:
+
+```cpp
+bool isPointInCircumcircle(Point a, Point b, Point c, Point d) {
+// Berechnung der 4x4 Determinante
+double det = (a.x - d.x) * (b.y - d.y) - (a.y - d.y) * (b.x - d.x);
+return det > 0;
+}
+```

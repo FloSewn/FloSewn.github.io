@@ -1,0 +1,44 @@
+import MnistExplorer from '../components/MnistExplorer';
+
+export const meta = {
+  title: 'Latent Space Exploration (MNIST)',
+  date: 'Aktuelles Projekt',
+};
+
+# Latent Space Exploration (MNIST)
+
+Variational Autoencoder (VAEs) komprimieren hochdimensionale Daten nicht nur, sondern zwingen den latenten Raum in eine stetige Wahrscheinlichkeitsverteilung. Das Modell für dieses Projekt wurde in **PyTorch** trainiert und anschließend für die Inferenz im Browser nach **ONNX** exportiert.
+
+Die Loss-Funktion kombiniert dabei den Reconstruction Error (wie gut das Bild wiederhergestellt wird) mit der Kullback-Leibler-Divergenz:
+
+$$\mathcal{L}(\theta, \phi) = - \mathbb{E}_{q_\phi(z\vert{}x)}[\log p_\theta(x\vert{}z)] + D_{KL}(q_\phi(z\vert{}x) \parallel p(z))$$
+
+Durch diese Regularisierung entstehen im latenten Raum weiche Übergänge zwischen den Ziffern. Du kannst das hier direkt im Browser testen. Das Modell läuft lokal auf deinem Gerät via ONNX Runtime:
+
+{/* Hier fügen wir deine interaktive React-Komponente ein! */}
+
+<div className="not-prose my-10 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+  <MnistExplorer />
+</div>
+
+## Wie funktioniert der ONNX-Export?
+
+Der Export von PyTorch nach ONNX ist erstaunlich unkompliziert. Hier ist ein Ausschnitt aus meinem Trainings-Skript:
+
+```python
+import pytorch
+# Modell in den Eval-Modus setzen
+vae.eval()
+
+# Dummy-Input für das Tracing erstellen (Batch Size 1, 1 Channel, 28x28 Pixel)
+dummy_input = torch.randn(1, 1, 28, 28)
+
+torch.onnx.export(
+    vae,
+    dummy_input,
+    "vae_mnist.onnx",
+    export_params=True,
+    input_names=['input'],
+    output_names=['reconstruction', 'mu', 'logvar']
+)
+```

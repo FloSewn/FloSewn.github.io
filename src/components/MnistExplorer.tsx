@@ -1,7 +1,7 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useVAE } from '../hooks/useVAE';
 
-export const MnistVaeDemo: React.FC = () => {
+export default function MnistExplorer() {
   const { isReady, encode, decode } = useVAE();
   const drawCanvasRef = useRef<HTMLCanvasElement>(null);
   const outCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -9,7 +9,6 @@ export const MnistVaeDemo: React.FC = () => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [z, setZ] = useState<[number, number]>([0, 0]);
 
-  // Handle Latent Decoding
   useEffect(() => {
     if (!isReady) return;
     const generateImage = async () => {
@@ -19,7 +18,6 @@ export const MnistVaeDemo: React.FC = () => {
     generateImage();
   }, [z, isReady, decode]);
 
-  // Drawing Logic
   const startDrawing = (e: React.MouseEvent) => {
     setIsDrawing(true);
     draw(e);
@@ -30,7 +28,6 @@ export const MnistVaeDemo: React.FC = () => {
     const ctx = drawCanvasRef.current?.getContext('2d');
     if (ctx) ctx.beginPath();
 
-    // Process drawing for the Encoder
     const pixels = extract28x28Pixels(drawCanvasRef.current!);
     const newZ = await encode(pixels);
     setZ(newZ);
@@ -60,24 +57,22 @@ export const MnistVaeDemo: React.FC = () => {
     setZ([0, 0]);
   };
 
-  // Utility: Initialize black canvas
   useEffect(() => clearCanvas(), []);
 
   return (
-    <div className="mx-auto my-12 max-w-4xl rounded-xl border border-slate-800 bg-slate-900 p-8 text-slate-100 shadow-lg">
+    <div className="w-full rounded-xl border border-slate-800 bg-slate-900 p-6 text-slate-100 shadow-lg sm:p-8">
       <div className="mb-8 text-center">
-        <h2 className="mb-2 text-3xl font-bold">Interactive Latent Space (MNIST)</h2>
-        <p className="text-slate-400">
+        <h2 className="mb-2 text-2xl font-bold">Interactive Latent Space (MNIST)</h2>
+        <p className="text-sm text-slate-400">
           {isReady
-            ? "Draw a digit on the left to encode it, or use the sliders to explore the VAE's 'dreams'."
-            : 'Loading ONNX WebAssembly...'}
+            ? 'Zeichne eine Ziffer, um sie zu enkodieren, oder nutze die Slider.'
+            : 'Lade ONNX WebAssembly...'}
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-12 md:grid-cols-2">
-        {/* Encoder Panel */}
+      <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
         <div className="flex flex-col items-center">
-          <h3 className="mb-4 font-mono text-sm font-bold tracking-wider text-blue-600">
+          <h3 className="mb-4 font-mono text-xs font-bold tracking-wider text-blue-500">
             ENCODER INPUT
           </h3>
           <canvas
@@ -88,30 +83,28 @@ export const MnistVaeDemo: React.FC = () => {
             onMouseUp={stopDrawing}
             onMouseOut={stopDrawing}
             onMouseMove={draw}
-            className="cursor-crosshair rounded-lg border-2 border-slate-700 shadow-inner"
+            className="w-full max-w-[280px] cursor-crosshair rounded-lg border-2 border-slate-700 shadow-inner"
           />
           <button
             onClick={clearCanvas}
-            className="mt-4 rounded-md bg-slate-800 px-4 py-2 text-sm transition-colors hover:bg-slate-700"
+            className="mt-4 rounded-md bg-slate-800 px-4 py-2 text-xs transition-colors hover:bg-slate-700"
           >
             Clear Canvas
           </button>
         </div>
 
-        {/* Decoder Panel */}
         <div className="flex flex-col items-center">
-          <h3 className="mb-4 font-mono text-sm font-bold tracking-wider text-teal-500">
+          <h3 className="mb-4 font-mono text-xs font-bold tracking-wider text-teal-400">
             DECODER OUTPUT
           </h3>
           <canvas
             ref={outCanvasRef}
             width={280}
             height={280}
-            className="rounded-lg border-2 border-slate-700 bg-black shadow-inner"
+            className="w-full max-w-[280px] rounded-lg border-2 border-slate-700 bg-black shadow-inner"
           />
 
-          {/* Latent Sliders */}
-          <div className="mt-6 w-full space-y-4 px-4">
+          <div className="mt-6 w-full max-w-[280px] space-y-4">
             <div>
               <label className="mb-1 flex justify-between font-mono text-xs text-slate-400">
                 <span>Z1 (Latent X)</span> <span>{z[0].toFixed(2)}</span>
@@ -145,7 +138,7 @@ export const MnistVaeDemo: React.FC = () => {
       </div>
     </div>
   );
-};
+}
 
 // --- Utilities ---
 function extract28x28Pixels(sourceCanvas: HTMLCanvasElement): Float32Array {
@@ -158,7 +151,7 @@ function extract28x28Pixels(sourceCanvas: HTMLCanvasElement): Float32Array {
   const imgData = ctx.getImageData(0, 0, 28, 28).data;
   const pixels = new Float32Array(784);
   for (let i = 0; i < 784; i++) {
-    pixels[i] = imgData[i * 4] / 255.0; // Use Red channel (grayscale)
+    pixels[i] = imgData[i * 4] / 255.0;
   }
   return pixels;
 }
@@ -179,7 +172,6 @@ function renderToCanvas(pixels: Float32Array, targetCanvas: HTMLCanvasElement) {
   }
   ctx.putImageData(imgData, 0, 0);
 
-  // Scale 28x28 up to 280x280 for display
   const targetCtx = targetCanvas.getContext('2d')!;
   targetCtx.imageSmoothingEnabled = false;
   targetCtx.drawImage(hiddenCanvas, 0, 0, 280, 280);

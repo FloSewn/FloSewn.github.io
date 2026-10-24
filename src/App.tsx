@@ -1,22 +1,27 @@
-import { Route, Routes } from 'react-router-dom';
-import { Navbar } from './components/Navbar';
-import { About } from './pages/About';
-import { Article } from './pages/Article';
-import { Home } from './pages/Home';
-import { Projects } from './pages/Projects';
+import { Link, Route, Routes } from 'react-router-dom';
+import Home from './pages/Home';
+import Project from './pages/Project';
 
 export default function App() {
   return (
-    <div className="flex min-h-screen flex-col bg-slate-950 font-sans text-slate-100">
-      <Navbar />
-      <div className="flex-grow">
+    <div className="mx-auto min-h-screen max-w-3xl bg-gray-50 px-6 py-12 font-sans text-gray-900">
+      <header className="mb-16 flex items-center justify-between">
+        <Link to="/" className="text-xl font-bold tracking-tight text-black no-underline">
+          F.
+        </Link>
+        <nav>
+          <Link to="/" className="text-sm text-gray-600 transition-colors hover:text-black">
+            Übersicht
+          </Link>
+        </nav>
+      </header>
+
+      <main>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/projects" element={<Projects />} />
-          <Route path="/article/:id" element={<Article />} />
+          <Route path="/projects/:slug" element={<Project />} />
         </Routes>
-      </div>
+      </main>
     </div>
   );
 }
