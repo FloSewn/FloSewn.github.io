@@ -83,7 +83,7 @@ export default function MnistExplorer() {
             onMouseUp={stopDrawing}
             onMouseOut={stopDrawing}
             onMouseMove={draw}
-            className="w-full max-w-[280px] cursor-crosshair rounded-lg border-2 border-slate-700 shadow-inner"
+            className="max w-full cursor-crosshair rounded-lg border-2 border-slate-700 shadow-inner"
           />
           <button
             onClick={clearCanvas}
@@ -101,10 +101,10 @@ export default function MnistExplorer() {
             ref={outCanvasRef}
             width={280}
             height={280}
-            className="w-full max-w-[280px] rounded-lg border-2 border-slate-700 bg-black shadow-inner"
+            className="max w-full rounded-lg border-2 border-slate-700 bg-black shadow-inner"
           />
 
-          <div className="mt-6 w-full max-w-[280px] space-y-4">
+          <div className="max mt-6 w-full space-y-4">
             <div>
               <label className="mb-1 flex justify-between font-mono text-xs text-slate-400">
                 <span>Z1 (Latent X)</span> <span>{z[0].toFixed(2)}</span>
