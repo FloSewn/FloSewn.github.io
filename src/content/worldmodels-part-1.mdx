@@ -1,0 +1,98 @@
+import PlayableRaceCar from '../components/PlayableRaceCar';
+import TeacherSimulation from '../components/TeacherSimulation';
+
+export const meta = {
+  title: 'WorldModels Part 1: Generating Data in a Custom Environment',
+  date: 'Current',
+};
+
+# WorldModels Part 1: Data Generation
+
+In their seminal paper [World Models](https://worldmodels.github.io/), Ha and Schmidhuber demonstrated that reinforcement learning agents can achieve high performance by decoupling representation learning, dynamics modeling, and policy optimization. By training a generative model to predict future latent states, a controller can be optimized entirely within a simulated forward model.
+
+Before addressing the representation and memory models, we require a controlled environment. I implemented a custom 2D continuous control task adhering to the standard `gymnasium` interface.
+
+## 1. The Physics and the Rules
+
+The environment state is represented as a $64 \times 64$ RGB pixel grid. The objective is to maintain a trajectory along the center line of a circular track. The reward function is proportional to the agent's velocity, with penalties applied for deviation from the track center. Exceeding a cross-track error of `15.0` terminates the episode.
+
+To understand the system dynamics the final model will have to infer from raw pixels, you can interact with the environment here:
+
+<PlayableRaceCar />
+
+## 2. Automating the Teacher
+
+To train our Vision Model (a Variational Autoencoder, which we will cover in Part 2), we need a diverse dataset of state transitions. Rather than generating purely random rollouts, we implement a proportional (P) controller that acts as an algorithmic teacher, driving the car while injecting stochastic exploration.
+
+Here is the core logic that updates the physics and generates our rollout data:
+
+```python
+def update_physics(x, y, theta, velocity, action_steer, action_accel):
+    friction = 0.95
+    max_speed = 10.0
+
+    # Update velocity
+    velocity = velocity * friction + action_accel
+    velocity = max(min(velocity, max_speed), -max_speed)
+
+    # Apply steering proportional to speed
+    theta += action_steer * (velocity * 0.1)
+
+    # Trigonometric position update
+    x += velocity * np.cos(theta)
+    y += velocity * np.sin(theta)
+
+    return x, y, theta, velocity
+```
+
+## 3. Addressing the Covariate Shift (OOD Data)
+
+If we simply let a perfect PID controller drive the car around the track, the generated dataset would be highly correlated and strictly confined to the ideal trajectory.
+
+Training a generative model exclusively on this narrow distribution leads to a well-known failure mode in behavioral cloning and RL: the moment the trained policy deviates slightly from the ideal line during inference, it encounters an **Out-of-Distribution (OOD)** state. Lacking a representation of these off-track states, the model cannot recover, leading to compounding errors and inevitable crashes.
+
+To mitigate this covariate shift, we implement two crucial perturbations during the data generation process:
+
+1. **Spatial Randomization:** The car spawns between an inner radius of 10 and an outer radius of 30, often at extreme angles relative to the track direction.
+2. **Stochastic Perturbations:** Using an epsilon-greedy approach ($10\%$ probability), the controller outputs a maximal steering disturbance for a split second, actively forcing the car off the track before the P-controller compensates.
+
+The component below runs 200 episodes of this perturbed controller live in the browser:
+
+<TeacherSimulation />
+
+As the scatter plot demonstrates, the stochastic teacher effectively explores the surrounding state space (blue distribution). The histogram proves that we generate a healthy "long tail" of cross-track errors, providing the Vision Model with a robust dataset that includes crash scenarios, extreme angles, and crucial recovery trajectories.
+
+## 4. Porting Physics to the Web: Two Subtle Math Quirks
+
+When translating the Python environment to TypeScript to run the interactive simulations above, the initial error distribution in the browser looked fundamentally wrong (forming a linear drop-off instead of an exponential tail). This was caused by two classic translation traps between Python and C-style languages:
+
+**1. The Modulo Operator vs. Remainder**
+In Python, `%` is a true mathematical modulo (`-1 % 5 == 4`), which safely wraps negative angles.
+In TypeScript (and C++), `%` is a remainder operator (`-1 % 5 == -1`). This caused the TS car
+to lose orientation at negative angles. The fix is a mathematical wrapper:
+
+```typescript
+// TypeScript Modulo Fix
+const twoPi = 2 * Math.PI;
+steerError = ((((steerError + Math.PI) % twoPi) + twoPi) % twoPi) - Math.PI;
+```
+
+**2. Gaussian vs. Uniform Noise**
+Python's `np.random.normal()` generates a perfect Gaussian bell curve, which is critical
+for natural noise injection. TypeScript's `Math.random()` is strictly uniform.
+To replicate the exact Python data distribution in the browser, we have to implement
+the [**Box-Muller transform**](https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform) to generate true normally distributed numbers from a uniform source:
+
+```typescript
+// Box-Muller Transform in JS
+const randn = () => {
+  let u = 0,
+    v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+};
+```
+
+By generating $10,000$ episodes with these mathematically solid rules,
+we compile a robust foundational dataset for the next step: teaching our model to "see" this world.
