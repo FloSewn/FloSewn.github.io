@@ -1,0 +1,71 @@
+import VaePipeline from '../components/VaePipeline';
+import TrainingEvolution from '../components/TrainingEvolution';
+
+export const meta = {
+  title: 'WorldModels Part 2: Representation Learning with a VAE',
+  date: 'Current',
+};
+
+# WorldModels Part 2: The Vision Model
+
+In Part 1, we established the environment and generated $10,000$ perturbed trajectories to ensure comprehensive out-of-distribution (OOD) coverage. The next architectural challenge is dimensionality reduction.
+
+Operating a Reinforcement Learning policy directly on raw pixel arrays ($64 \times 64 \times 3 = 12,288$ dimensions) is computationally inefficient and highly susceptible to noise. The goal of the Vision Model is to compress this high-dimensional observation space into a low-dimensional, continuous latent vector $z \in \mathbb{R}^{32}$.
+
+## 1. Spatial Awareness via CoordConv
+
+A standard Convolutional Neural Network (CNN) is inherently translation-invariant. While this is highly beneficial for image classification, our control task relies exclusively on precise spatial localization—the agent must know _exactly_ where the car is on the track.
+
+To break the translation invariance and give the filters access to absolute spatial coordinates, the encoder utilizes a **CoordConv** layer. We generate two normalized coordinate grids $C_x$ and $C_y$ ranging from $-1.0$ to $1.0$:
+
+$$ C_x^{(i,j)} = \frac{2j}{W-1} - 1, \quad C_y^{(i,j)} = \frac{2i}{H-1} - 1 $$
+
+These coordinate grids are concatenated to the original RGB input tensor $X$, transforming the 3-channel image into a 5-channel tensor before the first convolution:
+
+$$ X\_{\text{coord}} = \text{Concat}(X, C_x, C_y) \in \mathbb{R}^{B \times 5 \times H \times W} $$
+
+By explicitly providing $(X, Y)$ coordinates to the filters, the encoder easily learns a continuous mapping from the car's visual position to a precise latent representation.
+
+## 2. The Custom Masked Loss Function
+
+Training a Variational Autoencoder (VAE) on an environment where 99% of the pixels are static background presents a significant challenge: Mode collapse. If we use a standard Mean Squared Error (MSE), the network quickly learns that completely ignoring the tiny $4 \times 2$ pixel car and outputting a static gray track yields a near-perfect loss.
+
+To force the network to allocate latent capacity to the car, I designed a **Masked Binary Cross Entropy (BCE)** loss.
+
+Since the car is red and the track is gray ($R=G=B$), we can dynamically generate a boolean mask during training by measuring the absolute difference between the blue and red channels:
+
+$$ M = \begin{cases} 10 & \text{if } |X*{\text{blue}} - X*{\text{red}}| > \delta \\ 1 & \text{otherwise} \end{cases} $$
+
+We then apply this multiplier matrix to the standard BCE loss, scaling the penalty for car-pixels by a factor of 10. The total loss function combines this masked reconstruction loss with the Kullback-Leibler (KL) divergence, regulated by a $\beta$-parameter to prevent the latent space from collapsing:
+
+$$ \mathcal{L}_{\text{Total}} = \frac{1}{N} \sum \left( M \odot \text{BCE}(X, \hat{X}) \right) + \beta \cdot D_{\text{KL}}(q(z|x) \,||\, \mathcal{N}(0, I)) $$
+
+## 3. Training Dynamics and the Grokking Phenomenon
+
+By tracking the reconstructed images over the 70 training epochs, we can observe a fascinating optimization behavior often referred to as **Grokking** or delayed generalization.
+
+In the early epochs, the network falls into a deceptive local minimum. Because the car can be anywhere on the track, the VAE attempts to minimize the overall statistical error by "smearing" the car across all possible positions. The result is a highly blurred, homogeneous **red ring** over the entire track, while the car itself is entirely absent.
+
+After several dozen epochs, a sudden phase transition occurs. The network finally discovers how to leverage the `CoordConv` channels to map the latent vectors to a discrete Cartesian position. Within just a few iterations, the reconstruction loss drops sharply, the red ring turns back into a solid gray track, and the red car is perfectly localized.
+
+By tracking the reconstructed images over the 70 training epochs, we can observe a fascinating optimization behavior often referred to as **Grokking** or delayed generalization.
+
+Use the slider below to scrub through the optimization process epoch by epoch:
+
+<TrainingEvolution />
+
+Notice the optimization plateau in the early epochs. Because the car can be anywhere on the track, the VAE falls into a deceptive local minimum: it attempts to minimize the overall statistical error by "smearing" the car across all possible positions. The result is a highly blurred, homogeneous **red ring** over the entire track, while the discrete car is entirely absent.
+
+After a few dozen epochs, a sudden phase transition occurs (the sharp drop in the loss curve). The network finally discovers how to leverage the `CoordConv` channels to map the latent vectors to discrete Cartesian positions. Within just a few iterations, the red ring condenses back into a solid gray track, and the red car is perfectly localized.
+
+## 4. Real-Time Inference in the Browser
+
+To verify this learned representation, we can export the trained PyTorch encoder and decoder as separate ONNX graphs. The component below runs the physics engine and the VAE inference live in your browser via WebAssembly.
+
+To visualize the 32-dimensional latent space $z$, we extract the latent vectors from the validation set and compute a Principal Component Analysis (PCA) matrix. The WebAssembly pipeline performs the inference, applies the pre-computed PCA matrix to project $z$ down to $\mathbb{R}^2$, and visualizes the current state in real-time.
+
+<VaePipeline />
+
+Notice the behavior in the center panel: As you drive the car around the track, the latent point traces a continuous loop. The network has independently discovered and encoded the circular topology of the track within its 32-dimensional latent space.
+
+By replacing the $12,288$ pixel values with this dense $32$-dimensional vector, we can now train a highly efficient temporal model to predict the future state of this latent representation.
