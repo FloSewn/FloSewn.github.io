@@ -42,21 +42,19 @@ $$ \mathcal{L}_{\text{Total}} = \frac{1}{N} \sum \left( M \odot \text{BCE}(X, \h
 
 ## 3. Training Dynamics and the Grokking Phenomenon
 
-By tracking the reconstructed images over the 70 training epochs, we can observe a fascinating optimization behavior often referred to as **Grokking** or delayed generalization.
-
-In the early epochs, the network falls into a deceptive local minimum. Because the car can be anywhere on the track, the VAE attempts to minimize the overall statistical error by "smearing" the car across all possible positions. The result is a highly blurred, homogeneous **red ring** over the entire track, while the car itself is entirely absent.
-
-After several dozen epochs, a sudden phase transition occurs. The network finally discovers how to leverage the `CoordConv` channels to map the latent vectors to a discrete Cartesian position. Within just a few iterations, the reconstruction loss drops sharply, the red ring turns back into a solid gray track, and the red car is perfectly localized.
-
-By tracking the reconstructed images over the 70 training epochs, we can observe a fascinating optimization behavior often referred to as **Grokking** or delayed generalization.
+By tracking the reconstructed images and loss metrics over the training epochs, we can observe a fascinating optimization behavior often referred to as delayed generalization or **Grokking**.
 
 Use the slider below to scrub through the optimization process epoch by epoch:
 
 <TrainingEvolution />
 
-Notice the optimization plateau in the early epochs. Because the car can be anywhere on the track, the VAE falls into a deceptive local minimum: it attempts to minimize the overall statistical error by "smearing" the car across all possible positions. The result is a highly blurred, homogeneous **red ring** over the entire track, while the discrete car is entirely absent.
+Observe the specific dynamics up to **Epoch 7**. The network falls into a deceptive local minimum: it aggressively minimizes the KL Divergence (orange line) while the reconstruction and validation losses quickly hit a plateau. Because the model hasn't yet learned to encode spatial information, it takes the statistical "lazy route", smearing the car across all possible positions. The result is a highly blurred, homogeneous **red ring**.
 
-After a few dozen epochs, a sudden phase transition occurs (the sharp drop in the loss curve). The network finally discovers how to leverage the `CoordConv` channels to map the latent vectors to discrete Cartesian positions. Within just a few iterations, the red ring condenses back into a solid gray track, and the red car is perfectly localized.
+Right around **Epoch 8**, a phase transition occurs. The network finally discovers how to leverage the `CoordConv` channels to map the latent vectors to a discrete Cartesian position.
+
+Notice the detail in the metrics at this exact moment: **The KL Loss suddenly spikes**, breaking its downward trend. To encode the precise position of the car, the encoder is forced to push real information through the bottleneck, deviating from the perfect Gaussian prior.
+
+Simultaneously, the red ring condenses into a localized red blob, causing the reconstruction and validation losses to break out of their plateau and drop sharply (with the overall training loss and reconstruction loss sitting almost perfectly on top of each other, as reconstruction dominates the penalty). Over the remaining epochs, the track turns back to solid gray and the car becomes perfectly localized.
 
 ## 4. Real-Time Inference in the Browser
 

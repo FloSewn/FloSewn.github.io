@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 
+// FIX: Exakt an die Keys in deiner JSON-Datei angepasst (Plural-s)
 interface Metrics {
   train_loss: number[];
   val_loss: number[];
   recon_loss: number[];
+  kl_loss: number[];
   epochs: number;
 }
 
@@ -14,130 +16,166 @@ export default function TrainingEvolution() {
 
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [epoch, setEpoch] = useState(0);
+  const [imagesLoaded, setImagesLoaded] = useState(false);
 
   const spriteImgRef = useRef<HTMLImageElement | null>(null);
   const origImgRef = useRef<HTMLImageElement | null>(null);
 
-  // Daten und Bilder einmalig laden
   useEffect(() => {
-    const basePath = import.meta.env.BASE_URL;
+    // Alle drei Assets auf den neuen Ordner-Pfad anpassen!
+    const jsonUrl = '/worldmodel/vae/training_metrics.json';
+    const spriteUrl = '/worldmodel/vae/reconstructions_sprite.png';
+    const origUrl = '/worldmodel/vae/original_image.png';
 
-    fetch(`${basePath}worldmodel/vae/training_metrics.json`)
-      .then((r) => r.json())
+    // JSON laden
+    fetch(jsonUrl)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP Error ${r.status}`);
+        const contentType = r.headers.get('content-type');
+        if (contentType && contentType.indexOf('application/json') === -1) {
+          throw new Error('Erwartetes JSON, bekam aber HTML. Pfad prüfen!');
+        }
+        return r.json();
+      })
       .then((data) => {
         setMetrics(data);
-        setEpoch(data.epochs - 1); // Start beim finalen Modell
-      });
+        setEpoch(0);
+      })
+      .catch((e) => console.error('FATAL:', e));
 
+    let loadedCount = 0;
+    const checkDone = () => {
+      loadedCount++;
+      if (loadedCount === 2) setImagesLoaded(true);
+    };
+
+    // Bilder laden UND IN DIE REFS SPEICHERN!
     const sprite = new Image();
-    sprite.src = `${basePath}worldmodel/vae/reconstructions_sprite.png`;
-    spriteImgRef.current = sprite;
+    sprite.onload = () => {
+      spriteImgRef.current = sprite; // <-- DAS HATTE ICH VERGESSEN
+      checkDone();
+    };
+    sprite.onerror = () => console.error(`Sprite nicht gefunden unter: ${spriteUrl}`);
+    sprite.src = spriteUrl;
 
     const orig = new Image();
-    orig.src = `${basePath}worldmodel/vae/original_image.png`;
     orig.onload = () => {
-      origImgRef.current = orig;
-      // Originalbild einmalig zeichnen
-      const ctx = origCanvasRef.current?.getContext('2d');
-      if (ctx) {
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(orig, 0, 0, 256, 256);
-      }
+      origImgRef.current = orig; // <-- UND DAS HIER AUCH
+      checkDone();
     };
+    orig.onerror = () => console.error(`Original nicht gefunden unter: ${origUrl}`);
+    orig.src = origUrl;
   }, []);
 
-  // Chart zeichnen, wenn sich die Epoche ändert
   useEffect(() => {
-    if (!metrics) return;
+    // Nur zeichnen, wenn Daten und Bilder WIRKLICH da sind
+    if (!metrics || !imagesLoaded) return;
+
+    // --------------------------------------------------------
+    // 1. CHART ZEICHNEN
+    // --------------------------------------------------------
     const canvas = chartCanvasRef.current;
     const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
+    if (canvas && ctx) {
+      const w = canvas.width;
+      const h = canvas.height;
+      const padding = 20;
 
-    const w = canvas.width;
-    const h = canvas.height;
-    const padding = 20;
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(0, 0, w, h);
 
-    // Hintergrund
-    ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(padding, padding);
+      ctx.lineTo(padding, h - padding);
+      ctx.lineTo(w - padding, h - padding);
+      ctx.stroke();
 
-    // Skalierung berechnen
-    // Wir fokussieren uns auf den Recon Loss (da dieser das Grokking am besten zeigt)
-    const maxLoss = Math.max(...metrics.recon_loss.slice(1)); // Ignoriere Epoche 0 für besseren Zoom
-    const minLoss = Math.min(...metrics.recon_loss);
+      // Saftey-Check bei der Normierung (fängt leere Arrays ab)
+      // Klassische lineare Min-Max Normierung
+      const normalize = (arr: number[] | undefined) => {
+        if (!arr || arr.length === 0) return [];
+        const min = Math.min(...arr);
+        const max = Math.max(...arr);
+        if (max === min) return arr.map(() => 0.5);
+        return arr.map((v) => (v - min) / (max - min));
+      };
 
-    const scaleX = (w - 2 * padding) / (metrics.epochs - 1);
-    const scaleY = (h - 2 * padding) / (maxLoss - minLoss);
+      const plotSpecs = [
+        { key: 'recon_loss', color: '#ef4444', data: normalize(metrics.recon_loss) },
+        { key: 'kl_loss', color: '#f59e0b', data: normalize(metrics.kl_loss) },
+        { key: 'train_loss', color: '#10b981', data: normalize(metrics.train_loss) },
+        { key: 'val_loss', color: '#3b82f6', data: normalize(metrics.val_loss) },
+      ].filter((spec) => spec.data.length > 0); // Nur rendern, was auch existiert
 
-    const getY = (val: number) => h - padding - (val - minLoss) * scaleY;
-    const getX = (ep: number) => padding + ep * scaleX;
+      const scaleX = (w - 2 * padding) / (metrics.epochs - 1);
+      const scaleY = h - 2 * padding;
 
-    // Achsen
-    ctx.strokeStyle = '#cbd5e1';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(padding, padding);
-    ctx.lineTo(padding, h - padding);
-    ctx.lineTo(w - padding, h - padding);
-    ctx.stroke();
+      const getX = (ep: number) => padding + ep * scaleX;
+      const getY = (val: number) => h - padding - val * scaleY;
 
-    // Loss-Kurve zeichnen
-    ctx.beginPath();
-    ctx.moveTo(getX(0), getY(metrics.recon_loss[0]));
-    for (let i = 1; i < metrics.epochs; i++) {
-      ctx.lineTo(getX(i), getY(metrics.recon_loss[i]));
+      plotSpecs.forEach((spec) => {
+        ctx.beginPath();
+        ctx.moveTo(getX(0), getY(spec.data[0]));
+        for (let i = 1; i < metrics.epochs; i++) {
+          ctx.lineTo(getX(i), getY(spec.data[i]));
+        }
+        ctx.strokeStyle = spec.color;
+        ctx.lineWidth = spec.key === 'recon_loss' ? 3 : 1.5;
+        ctx.stroke();
+      });
+
+      const currX = getX(epoch);
+      ctx.beginPath();
+      ctx.moveTo(currX, padding);
+      ctx.lineTo(currX, h - padding);
+      ctx.strokeStyle = '#94a3b8';
+      ctx.setLineDash([5, 5]);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      plotSpecs.forEach((spec) => {
+        ctx.beginPath();
+        ctx.arc(currX, getY(spec.data[epoch]), 4, 0, 2 * Math.PI);
+        ctx.fillStyle = spec.color;
+        ctx.fill();
+      });
     }
-    ctx.strokeStyle = '#ef4444'; // Rot
-    ctx.lineWidth = 2;
-    ctx.stroke();
 
-    // Markierungslinie für die aktuelle Epoche
-    const currX = getX(epoch);
-    ctx.beginPath();
-    ctx.moveTo(currX, padding);
-    ctx.lineTo(currX, h - padding);
-    ctx.strokeStyle = '#3b82f6'; // Blau
-    ctx.setLineDash([5, 5]);
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.setLineDash([]); // Reset
+    // --------------------------------------------------------
+    // 2. BILDER ZEICHNEN
+    // --------------------------------------------------------
+    const oCtx = origCanvasRef.current?.getContext('2d');
+    if (oCtx && origImgRef.current) {
+      oCtx.imageSmoothingEnabled = false;
+      oCtx.drawImage(origImgRef.current, 0, 0, 256, 256);
+    }
 
-    // Punkt auf der Kurve
-    ctx.beginPath();
-    ctx.arc(currX, getY(metrics.recon_loss[epoch]), 4, 0, 2 * Math.PI);
-    ctx.fillStyle = '#3b82f6';
-    ctx.fill();
-
-    // Sprite-Sheet Ausschnitt rendern
     const rCtx = reconCanvasRef.current?.getContext('2d');
-    if (rCtx && spriteImgRef.current && spriteImgRef.current.complete) {
+    if (rCtx && spriteImgRef.current) {
       rCtx.imageSmoothingEnabled = false;
       rCtx.clearRect(0, 0, 256, 256);
-      // (Bild, sourceX, sourceY, sourceW, sourceH, destX, destY, destW, destH)
-      rCtx.drawImage(
-        spriteImgRef.current,
-        epoch * 64,
-        0,
-        64,
-        64, // Source Window
-        0,
-        0,
-        256,
-        256 // Destination
-      );
+      rCtx.drawImage(spriteImgRef.current, epoch * 64, 0, 64, 64, 0, 0, 256, 256);
     }
-  }, [epoch, metrics]);
+  }, [epoch, metrics, imagesLoaded]);
 
-  if (!metrics)
-    return <div className="p-6 text-center font-mono text-gray-500">Loading telemetry...</div>;
+  if (!metrics || !imagesLoaded) {
+    return (
+      <div className="my-10 p-6 text-center font-mono text-gray-500">
+        Initializing Telemetry & Assets...
+      </div>
+    );
+  }
 
   return (
     <div className="not-prose my-10 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-      <div className="mb-6 flex items-end justify-between">
+      <div className="mb-4 flex items-end justify-between">
         <div>
-          <h3 className="text-lg font-bold text-gray-900">Training Dynamics & Grokking</h3>
+          <h3 className="text-lg font-bold text-gray-900">Training Dynamics (Normalized [0, 1])</h3>
           <p className="mt-1 font-mono text-sm text-gray-500">
-            Reconstruction Loss: {metrics.recon_loss[epoch].toFixed(2)}
+            Recon Loss (Raw): {metrics.recon_loss[epoch].toFixed(2)}
           </p>
         </div>
         <div className="text-right">
@@ -146,7 +184,7 @@ export default function TrainingEvolution() {
         </div>
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-6 md:grid-cols-3">
+      <div className="mb-2 grid grid-cols-1 gap-6 md:grid-cols-3">
         <div className="flex flex-col md:col-span-2">
           <canvas
             ref={chartCanvasRef}
@@ -155,13 +193,12 @@ export default function TrainingEvolution() {
             className="h-[256px] w-full rounded border border-gray-300 bg-slate-50"
           />
 
-          {/* SLIDER */}
           <input
             type="range"
             min={0}
             max={metrics.epochs - 1}
             value={epoch}
-            onChange={(e) => setEpoch(parseInt(e.target.value))}
+            onChange={(e) => setEpoch(parseInt(e.target.value, 10))}
             className="mt-4 w-full cursor-pointer accent-blue-600"
           />
           <span className="mt-2 text-center text-xs text-gray-400">
@@ -189,6 +226,24 @@ export default function TrainingEvolution() {
             />
           </div>
         </div>
+      </div>
+
+      {/* Legende */}
+      <div className="mt-2 flex flex-wrap justify-center gap-4 border-t pt-4">
+        {[
+          { label: 'Recon Loss', color: '#ef4444' },
+          { label: 'KL Loss', color: '#f59e0b' },
+          { label: 'Train Loss', color: '#10b981' },
+          { label: 'Val Loss', color: '#3b82f6' },
+        ].map((item) => (
+          <div key={item.label} className="flex items-center font-mono text-xs text-gray-600">
+            <span
+              className="mr-2 h-3 w-3 rounded-full"
+              style={{ backgroundColor: item.color }}
+            ></span>
+            {item.label}
+          </div>
+        ))}
       </div>
     </div>
   );

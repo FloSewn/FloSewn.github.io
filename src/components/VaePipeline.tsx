@@ -160,6 +160,7 @@ export default function VaePipeline() {
         const inputTensor = new ort.Tensor('float32', floatData, [1, 3, 64, 64]);
         const encResult = await models.enc.run({ input_image: inputTensor });
         const mu = encResult.latent_mu.data as Float32Array;
+        const logvar = encResult.latent_logvar.data as Float32Array; // Die echte Varianz vom VAE!
 
         // 5. PCA Projektion
         let pcaX = 0,
@@ -188,12 +189,15 @@ export default function VaePipeline() {
           inCtx.drawImage(hiddenCanvas.current, 0, 0, 256, 256);
         }
 
-        // 8. RENDERING Panel 2 (Latent PCA mit Fading Trail)
+        // ==========================================
+        // 8. RENDERING Panel 2 (PCA Trajektorie + Echter VAE Unsicherheits-Halo)
+        // ==========================================
         const latCtx = latentCanvasRef.current?.getContext('2d');
-        if (latCtx) {
-          // Hintergrund und Achsen
+        if (latCtx && models.pca) {
           latCtx.fillStyle = '#f8fafc';
           latCtx.fillRect(0, 0, 256, 256);
+
+          // Achsenkreuz
           latCtx.strokeStyle = '#e2e8f0';
           latCtx.lineWidth = 1;
           latCtx.beginPath();
@@ -205,27 +209,63 @@ export default function VaePipeline() {
           latCtx.lineTo(256, 128);
           latCtx.stroke();
 
-          // Verblassende Trajektorie (Trail) zeichnen
+          // PCA Projektion für mu
+          let pcaX = 0,
+            pcaY = 0;
+          for (let i = 0; i < 32; i++) {
+            const centered = mu[i] - models.pca.mean[i];
+            pcaX += centered * models.pca.components[0][i];
+            pcaY += centered * models.pca.components[1][i];
+          }
+
+          const plotX = 128 + pcaX * 40.0;
+          const plotY = 128 - pcaY * 40.0;
+
+          pcaHistory.push({ x: plotX, y: plotY });
+          if (pcaHistory.length > 40) pcaHistory.shift();
+
+          // Trajektorie-Spur
           if (pcaHistory.length > 1) {
             latCtx.lineWidth = 3;
-            // Wir zeichnen jedes Liniensegment einzeln, um den Alpha-Wert (Deckkraft) stetig zu erhöhen
             for (let i = 1; i < pcaHistory.length; i++) {
               latCtx.beginPath();
               latCtx.moveTo(pcaHistory[i - 1].x, pcaHistory[i - 1].y);
               latCtx.lineTo(pcaHistory[i].x, pcaHistory[i].y);
-
-              // Alpha geht von nahe 0.0 (ältester Punkt) bis 1.0 (neuester Punkt)
               const alpha = i / pcaHistory.length;
-              latCtx.strokeStyle = `rgba(59, 130, 246, ${alpha})`; // Tailwind blue-500
+              latCtx.strokeStyle = `rgba(59, 130, 246, ${alpha * 0.6})`;
               latCtx.stroke();
             }
           }
 
-          // Den aktuellen Kopf der Trajektorie als Punkt zeichnen
+          // ECHTE UNSICHERHEIT BERECHNEN:
+          // logvar in Standardabweichung sigma übersetzen: sigma = exp(0.5 * logvar)
+          // Wir nehmen den Durchschnitt über alle 32 Dimensionen als Gesamt-Unsicherheitswert
+          let avgSigma = 0;
+          for (let i = 0; i < 32; i++) {
+            avgSigma += Math.exp(0.5 * logvar[i]);
+          }
+          avgSigma /= 32.0;
+
+          // Skalieren für den Canvas (je größer avgSigma, desto größer der Radius)
+          const haloRadius = avgSigma * 300; //Math.max(16, avgSigma * 30.0);
+
+          // 1. Ruhiger, transparenter Unsicherheits-Kreis (kein Pulsieren, rein datengetrieben)
+          latCtx.beginPath();
+          latCtx.arc(plotX, plotY, haloRadius, 0, Math.PI * 2);
+          latCtx.fillStyle = 'rgba(59, 130, 246, 0.12)';
+          latCtx.fill();
+          latCtx.strokeStyle = 'rgba(59, 130, 246, 0.3)';
+          latCtx.lineWidth = 1;
+          latCtx.stroke();
+
+          // 2. Der stabile Haupt-Kernpunkt
           latCtx.beginPath();
           latCtx.arc(plotX, plotY, 5, 0, 2 * Math.PI);
-          latCtx.fillStyle = '#3b82f6'; // Voll deckendes Blau
+          latCtx.fillStyle = '#1d4ed8';
           latCtx.fill();
+          latCtx.strokeStyle = '#ffffff';
+          latCtx.lineWidth = 1.5;
+          latCtx.stroke();
         }
 
         // 9. RENDERING Panel 3 (Reconstruction)
@@ -290,14 +330,17 @@ export default function VaePipeline() {
         </div>
 
         <div className="flex flex-col items-center">
-          <span className="mb-2 text-xs font-bold text-blue-500">LATENT MANIFOLD (2D PCA)</span>
-          <canvas
-            ref={latentCanvasRef}
-            width={256}
-            height={256}
-            className="rounded border border-gray-300 bg-slate-50 shadow-inner"
-          />
-          <span className="mt-2 text-xs text-gray-400">z ∈ ℝ³² → ℝ²</span>
+          <div className="flex flex-col items-center">
+            <span className="mb-2 text-xs font-bold text-sky-500">LATENT FLOWER (32D)</span>
+            {/* Dunkler Hintergrund (slate-900) bringt den Neon-Glow zur Geltung */}
+            <canvas
+              ref={latentCanvasRef}
+              width={256}
+              height={256}
+              className="rounded border border-slate-700 bg-slate-900 shadow-inner"
+            />
+            <span className="mt-2 text-xs text-gray-400">Radius = µ, Puls = Organisch</span>
+          </div>
         </div>
 
         <div className="flex flex-col items-center">
